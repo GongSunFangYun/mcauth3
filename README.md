@@ -1,4 +1,4 @@
-# MCMSA - Minecraft Microsoft Authentication
+# mcauth3 - Minecraft Microsoft Authentication
 
 A minimalist Python library for Minecraft Microsoft account authentication that provides a clean, focused API for developers.
 
