@@ -305,7 +305,7 @@ MIT License
 
 ## Source Code
 
-Available at: https://github.com/GongSunFangYun/mcauth
+Available at: https://github.com/GongSunFangYun/mcauth3
 
 ## Support
 
