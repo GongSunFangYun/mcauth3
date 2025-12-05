@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mcauth"
+name = "mcauth3"
 version = "1.0.3"
 authors = [
     {name = "GongSunFangYun", email = "721506497@qq.com"},
@@ -17,4 +17,4 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/GongSunFangYun/mcauth"
+Repository = "https://github.com/GongSunFangYun/mcauth3"
