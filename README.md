@@ -74,12 +74,12 @@ device_data = authenticator.start_auth()
 **Returns**:
 ```json
 {
-    "user_code": "ABCDEFGH",           // Code for user to enter
-    "device_code": "device_code_string", # Internal device code
-    "verification_uri": "https://microsoft.com/devicelogin",
-    "expires_in": 900,                  // Seconds until code expires
-    "interval": 5,                      // Polling interval in seconds
-    "message": "To sign in..."          // User-friendly message
+    "user_code": "ABCDEFGH",   
+    "device_code": "device_code_string", 
+    "verification_uri": "https://www.microsoft.com/link",
+    "expires_in": 900,           
+    "interval": 5,           
+    "message": "To sign in..."     
 }
 ```
 
@@ -104,25 +104,17 @@ result = authenticator.finish_auth(device_data)
 ```json
 {
     "tokens": {
-        # Microsoft OAuth tokens
-        "microsoft_access_token": "eyJ...",      // Microsoft access token
-        "microsoft_refresh_token": "0.A...",     // Microsoft refresh token
-        
-        # Xbox platform tokens
-        "xbl_token": "eyJ...",                   // Xbox Live token
-        "xsts_token": "eyJ...",                  // XSTS token
-        
-        # Minecraft-specific tokens
-        "minecraft_access_token": "eyJ...",      // Minecraft API access token
-        "expires_in": 86400                      // Token validity in seconds
+        "microsoft_access_token": "eyJ...",    
+        "microsoft_refresh_token": "0.A...",   
+        "xbl_token": "eyJ...",            
+        "xsts_token": "eyJ...",   
+        "minecraft_access_token": "eyJ...",    
+        "expires_in": 86400    
     },
     "profile": {
-        # Minecraft player information
-        "id": "1234567890abcdef1234567890abcdef",  // Player UUID (32 chars)
-        "name": "PlayerName",                       // Current username
-        
-        # Cosmetic information
-        "skins": [                                  // Array of skin objects
+        "id": "1234567890abcdef1234567890abcdef", 
+        "name": "PlayerName",           
+        "skins": [                  
             {
                 "id": "skin-id",
                 "state": "ACTIVE",
@@ -130,7 +122,7 @@ result = authenticator.finish_auth(device_data)
                 "variant": "CLASSIC"
             }
         ],
-        "capes": [                                  // Array of cape objects
+        "capes": [                         
             {
                 "id": "cape-id",
                 "state": "ACTIVE",
