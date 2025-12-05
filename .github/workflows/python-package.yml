@@ -3,11 +3,11 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch: 
 
 permissions:
   contents: read
-  id-token: write  # 重要：用于PyPI的OIDC认证
+  id-token: write
 
 jobs:
   publish:
