@@ -15,9 +15,12 @@ A minimalist Python library for Minecraft Microsoft account authentication that 
 Only requires `requests` library - no unnecessary dependencies that complicate deployment or conflict with existing environments.
 
 ### 2. Clean API Design
-Two simple methods cover the entire authentication flow:
-- `start_auth()` - Start the authentication process
+Three small methods cover the entire authentication lifecycle:
+- `start_auth()` - Start the authentication process (get a device code)
 - `finish_auth()` - Complete the authentication process
+- `refresh_auth()` - Refresh an existing session without any user interaction
+
+You can also plug in your own Azure App ID with `MCMSA(client_id=...)` — see below.
 
 ### 3. Full OAuth2 Device Flow Support
 Implements Microsoft's OAuth2 device code flow, allowing authentication without exposing credentials in client applications.
@@ -31,12 +34,28 @@ Handles the entire chain: Microsoft → Xbox Live → XSTS → Minecraft Service
 pip install mcauth3
 ```
 
+## Using Your Own Azure App ID
+
+By default `MCMSA()` uses mcauth3's built-in client ID, so you can authenticate with zero setup. If you would rather run the flow under your own Azure application — for example to see sign-ins under your own app in the Azure portal, or to apply your own app-level policies — override it in the constructor:
+
+1. Register an application in the [Azure portal](https://portal.azure.com) → **App registrations**
+2. Under **Authentication**, enable **"Allow public client flows"** (the device-code flow is a public client flow)
+3. Pass the **Application (client) ID** to `MCMSA()`:
+
+```python
+from mcauth3 import MCMSA
+
+auth = MCMSA(client_id="your-azure-application-id")
+```
+
+Every request in the flow will now use *your* client ID.
+
 ## Quick Start
 
 ```python
 from mcauth3 import MCMSA
 
-# Initialize the authenticator
+# Initialize the authenticator (uses mcauth3's built-in client ID by default)
 auth = MCMSA()
 
 # 1. Start authentication - get device code
@@ -50,6 +69,10 @@ result = auth.finish_auth(device_info)
 # 3. Use the authentication result
 print(f"Player: {result['profile']['name']}")
 print(f"Access Token: {result['tokens']['minecraft_access_token']}")
+
+# 4. Keep the refresh token so you can re-authenticate silently later
+#    (see "Long-Term Authentication" below)
+refresh_token = result['tokens']['microsoft_refresh_token']
 ```
 
 ## API Reference
@@ -62,10 +85,14 @@ The main class that handles Minecraft Microsoft authentication.
 ```python
 from mcauth3 import MCMSA
 
-# Create an authenticator instance
+# Create an authenticator using mcauth3's built-in client ID
 authenticator = MCMSA()
+
+# Override with your own Azure application (client) ID
+authenticator = MCMSA(client_id="your-azure-app-id")
 ```
-- **Parameters**: None
+- **Parameters**:
+  - `client_id` (str, optional): Your Azure application (client) ID. Defaults to mcauth3's built-in client ID. Pass your own value to run the flow under your own Azure App registration.
 - **Returns**: `MCMSA` instance
 - **Note**: Each instance maintains its own HTTP session with a 30-second timeout.
 
@@ -141,6 +168,32 @@ result = authenticator.finish_auth(device_data)
 }
 ```
 
+#### `refresh_auth(refresh_token)`
+Refreshes an existing Microsoft session and re-runs the full auth chain — no device-code flow or user interaction needed. Use this for long-term authentication once you have a stored refresh token.
+
+```python
+result = authenticator.refresh_auth("0.A...refresh_token")
+```
+
+**Parameters**:
+- `refresh_token` (str): The `microsoft_refresh_token` obtained from a previous `finish_auth()` or `refresh_auth()` call
+
+**Returns**: The same `{"tokens": ..., "profile": ...}` structure as `finish_auth()`.
+
+**Usage Example**:
+```python
+# First, get a refresh token via the device-code flow
+device_data = authenticator.start_auth()
+result = authenticator.finish_auth(device_data)
+refresh_token = result['tokens']['microsoft_refresh_token']
+
+# Later, refresh without any user interaction
+refreshed = authenticator.refresh_auth(refresh_token)
+print(f"Player: {refreshed['profile']['name']}")
+```
+
+**Note**: Microsoft rotates refresh tokens — the refreshed result always carries the latest one, so store `result['tokens']['microsoft_refresh_token']` again after each refresh.
+
 ## Complete Usage Example
 
 ```python
@@ -183,6 +236,50 @@ try:
 except Exception as e:
     print(f"\n[X] Authentication failed: {e}")
 ```
+
+## Long-Term Authentication (Refresh Tokens)
+
+`finish_auth()` hands you a `microsoft_refresh_token` that stays valid for months. Store it somewhere safe, then call `refresh_auth()` later to get a brand-new session with **no user interaction** — ideal for launchers and long-running services.
+
+One thing to remember: Microsoft **rotates** refresh tokens, so always save the token returned by the *latest* call.
+
+```python
+from mcauth3 import MCMSA
+import json
+import os
+
+TOKEN_FILE = "auth_tokens.json"
+auth = MCMSA()
+
+
+def load_refresh_token():
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE) as f:
+            return json.load(f).get("refresh_token")
+    return None
+
+
+def save_refresh_token(token):
+    with open(TOKEN_FILE, "w") as f:
+        json.dump({"refresh_token": token}, f)
+
+
+# First run — full device-code flow, then keep the refresh token
+if load_refresh_token() is None:
+    device = auth.start_auth()
+    print(f"Visit {device['verification_uri']} and enter code {device['user_code']}")
+    result = auth.finish_auth(device)
+    save_refresh_token(result["tokens"]["microsoft_refresh_token"])
+    print(f"Signed in as {result['profile']['name']}")
+
+# Later runs — silent refresh, no user interaction
+else:
+    result = auth.refresh_auth(load_refresh_token())
+    save_refresh_token(result["tokens"]["microsoft_refresh_token"])  # rotation!
+    print(f"Session refreshed for {result['profile']['name']}")
+```
+
+If the stored token is revoked or expires, `refresh_auth()` raises `OAuthError` — catch it and fall back to a fresh `start_auth()` / `finish_auth()`.
 
 ## Practical Examples
 
@@ -259,31 +356,47 @@ def finish_auth():
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/refresh', methods=['POST'])
+def refresh_auth():
+    # Silent re-authentication: the client sends its stored refresh token and
+    # gets a brand-new session back without any user interaction.
+    refresh_token = request.json.get('refresh_token')
+    if not refresh_token:
+        return jsonify({'error': 'refresh_token required'}), 400
+    try:
+        result = MCMSA().refresh_auth(refresh_token)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 401
 ```
 
 ## Error Handling
 
-The library may raise the following exceptions:
+The library defines a small exception hierarchy (all subclasses of `mcauth3.MCAuthError`):
 
-1. **Network Issues**: `requests.exceptions.RequestException`
-2. **Invalid Device Code**: `Exception` with specific error message
-3. **Authentication Timeout**: `Exception` if user doesn't verify within the timeout period
-4. **Authentication Denied**: `Exception` if user denies permission
+- **`MCAuthError`** — base class for all library-specific errors
+- **`OAuthError`** — the OAuth token endpoint rejected the request (user denied the device code, the code expired, the refresh token is invalid, ...)
+- **`AuthTimeoutError`** — the user did not finish verification within the device-code lifetime
+- **`XboxAuthError`** — the Xbox Live / XSTS chain failed (no Xbox profile, banned account, underage account, ...)
 
-Example error handling:
+Network-level failures still surface as `requests.exceptions.RequestException`, which is *not* a subclass of `MCAuthError`.
+
 ```python
-from mcauth3 import MCMSA
-import requests
+from mcauth3 import MCMSA, OAuthError, AuthTimeoutError, XboxAuthError
 
 try:
     auth = MCMSA()
     device_info = auth.start_auth()
     result = auth.finish_auth(device_info)
-    
-except requests.exceptions.RequestException as e:
-    print(f"Network error: {e}")
+except AuthTimeoutError as e:
+    print(f"User did not verify in time: {e}")
+except OAuthError as e:
+    print(f"User denied or code expired: {e}")
+except XboxAuthError as e:
+    print(f"Xbox issue: {e}")
 except Exception as e:
-    print(f"Authentication error: {e}")
+    print(f"Other error (e.g. network): {e}")
 ```
 
 ## Best Practices
@@ -292,11 +405,12 @@ except Exception as e:
 2. **Timing**: Call `finish_auth()` within 15 minutes of `start_auth()` (device code expiry)
 3. **Error Handling**: Always wrap authentication calls in try-except blocks
 4. **User Instructions**: Provide clear, step-by-step instructions for the verification process
-5. **Token Storage**: Securely store `microsoft_refresh_token` if you need long-term authentication
+5. **Token Storage**: Securely store `microsoft_refresh_token` and use `refresh_auth()` for long-term authentication without repeating the device-code flow
+6. **Refresh Rotation**: Microsoft rotates refresh tokens — always store the `microsoft_refresh_token` returned by the *latest* `finish_auth()` / `refresh_auth()` call
 
 ## Requirements
 
-- Python 3.7+
+- Python 3.10+
 - requests>=2.28.0
 
 ## License
